@@ -94,6 +94,7 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
             newSuffix = '6';
         }
         
+        // If lastChar is 0 or 1, or not a digit, it remains unchanged (based on prompt only specifying 2-9)
         mappedSalesOrderId = prefix + newSuffix;
       }
 

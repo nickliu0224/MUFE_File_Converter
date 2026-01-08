@@ -88,16 +88,19 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="bg-black text-white p-1.5 rounded-md font-bold text-lg tracking-tighter">
-              MUFE
-            </div>
+          <div className="flex items-center gap-4">
+            <img 
+              src="/mufe-logo.png" 
+              alt="MAKE UP FOR EVER" 
+              className="h-10 w-auto object-contain"
+            />
+            <div className="h-6 w-px bg-gray-300 mx-1"></div>
             <h1 className="text-xl font-bold text-gray-800 tracking-tight">
               MOMO 轉檔小幫手
             </h1>
           </div>
           <div className="hidden sm:flex flex-col items-end justify-center text-xs text-gray-400 font-mono leading-tight">
-            <span>v1.1.0</span>
+            <span>v1.1.3</span>
             <span className="text-[10px] opacity-75">Made by IS Nick</span>
           </div>
         </div>
