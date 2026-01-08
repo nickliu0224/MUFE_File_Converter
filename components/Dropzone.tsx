@@ -72,9 +72,6 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted, isLoading }) => {
         <h3 className="text-lg font-semibold text-gray-700 mb-1">
           {isLoading ? "處理中..." : "點擊或拖曳檔案至此"}
         </h3>
-        <p className="text-sm text-gray-500">
-          支援 .xlsx 格式 (MOMO 報表)
-        </p>
       </div>
     </div>
   );
