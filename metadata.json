@@ -1,0 +1,5 @@
+{
+  "name": "MUFE MOMO Order Converter",
+  "description": "A tool to convert MOMO Excel order reports into the MUFE ZOHO CSV import format.",
+  "requestFramePermissions": []
+}
