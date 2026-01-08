@@ -120,11 +120,15 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
       };
 
     } else {
-      // --- Shipment Order Logic (Existing) ---
+      // --- Shipment Order Logic (Modified) ---
       const price = row["售價(含稅)"] || 0;
       const customer = row["收件人姓名"] || "";
-      const shipDate = formatShipDate(row["實際出貨日"] || row["轉單日"]);
-      const orderDate = formatOrderDate(row["訂單成立日"]);
+      
+      // Change 1: Ship date comes strictly from "實際出貨日"
+      const shipDate = formatShipDate(row["實際出貨日"]);
+      
+      // Change 2: Order date comes from "轉單日" instead of "訂單成立日"
+      const orderDate = formatOrderDate(row["轉單日"]);
 
       output = {
         "Omni ERP 系統訂單編號": orderId,
