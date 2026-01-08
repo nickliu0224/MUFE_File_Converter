@@ -57,7 +57,8 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
 
   // Map rows
   const csvRows = rows.map((row) => {
-    const orderId = row["訂單編號"] || "";
+    // Ensure orderId is a string for manipulation
+    const orderId = row["訂單編號"] ? String(row["訂單編號"]).trim() : "";
     const sku = row["商品原廠編號"] || "";
     
     let output: CsvOutputRow;
@@ -67,11 +68,33 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
       const returnDate = formatReturnDate(row["回收送達日"]); 
       
       // Clean up Return Reason: Remove surrounding quotes if they exist in the source data
-      // Example: "想要..." -> 想要...
-      // We strip them here so we can cleanly re-add them in the CSV generation step without triple quoting
       let returnReason = row["退貨原因"] || "";
       if (typeof returnReason === 'string') {
         returnReason = returnReason.trim().replace(/^"|"$/g, '');
+      }
+
+      // Logic for Sales Order ID mapping based on last digit
+      // 2,3 -> 1
+      // 4,5 -> 2
+      // 6,7 -> 4
+      // 8,9 -> 6
+      let mappedSalesOrderId = orderId;
+      if (orderId.length > 0) {
+        const lastChar = orderId.slice(-1);
+        const prefix = orderId.slice(0, -1);
+        let newSuffix = lastChar;
+
+        if (lastChar === '2' || lastChar === '3') {
+            newSuffix = '1';
+        } else if (lastChar === '4' || lastChar === '5') {
+            newSuffix = '2';
+        } else if (lastChar === '6' || lastChar === '7') {
+            newSuffix = '4';
+        } else if (lastChar === '8' || lastChar === '9') {
+            newSuffix = '6';
+        }
+        
+        mappedSalesOrderId = prefix + newSuffix;
       }
 
       output = {
@@ -93,7 +116,7 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
         "訂購日期": "", // Empty in return sample
         "退貨狀態更新時間": returnDate, // Column Q
         "銷售訂單狀態": "退貨結案",
-        "銷售訂單編號": orderId, // Maps Order ID to Sales Order ID
+        "銷售訂單編號": mappedSalesOrderId, // Use the modified ID
         "退貨申請日": "",
         "退貨原因": returnReason,
         "地址": "",
@@ -120,14 +143,11 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
       };
 
     } else {
-      // --- Shipment Order Logic (Modified) ---
+      // --- Shipment Order Logic ---
       const price = row["售價(含稅)"] || 0;
       const customer = row["收件人姓名"] || "";
       
-      // Change 1: Ship date comes strictly from "實際出貨日"
       const shipDate = formatShipDate(row["實際出貨日"]);
-      
-      // Change 2: Order date comes from "轉單日" instead of "訂單成立日"
       const orderDate = formatOrderDate(row["轉單日"]);
 
       output = {
