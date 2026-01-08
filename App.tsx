@@ -223,13 +223,6 @@ const App: React.FC = () => {
             )}
           </div>
         </div>
-        
-        {/* Helper Footer */}
-        <div className="mt-8 text-center">
-            <p className="text-sm text-gray-400">
-                僅支援標準 MOMO 訂單 Excel 格式 (xlsx)
-            </p>
-        </div>
       </main>
     </div>
   );
