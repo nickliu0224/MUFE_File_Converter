@@ -1,86 +1,157 @@
 import React, { useState } from 'react';
-import { Download, CheckCircle, FileText, AlertCircle, RefreshCw, FileOutput } from 'lucide-react';
+import { Download, CheckCircle, AlertCircle, RefreshCw, FileOutput, Loader2, FileArchive, XCircle } from 'lucide-react';
 import Dropzone from './components/Dropzone';
 import { parseExcel, convertToCsvData } from './services/excelService';
 import { generateFilenameTimestamp } from './utils/dateFormatter';
+import JSZip from 'jszip';
+
+interface ProcessedFile {
+  id: string;
+  originalName: string;
+  status: 'processing' | 'success' | 'error';
+  progress: number;
+  csvContent: string | null;
+  outputFilename: string;
+  recordCount: number;
+  fileTypeDisplay: string;
+  errorMsg?: string;
+}
 
 const App: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
-  const [progress, setProgress] = useState(0);
-  const [csvContent, setCsvContent] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const [generatedFilename, setGeneratedFilename] = useState<string>("");
-  const [recordCount, setRecordCount] = useState(0);
-  const [fileTypeDisplay, setFileTypeDisplay] = useState<string>("");
+  const [files, setFiles] = useState<ProcessedFile[]>([]);
+  
+  // Computed states
+  const isProcessing = files.some(f => f.status === 'processing');
+  const hasFiles = files.length > 0;
+  const successFiles = files.filter(f => f.status === 'success');
+  const hasSuccess = successFiles.length > 0;
 
-  const handleFileProcess = async (uploadedFile: File) => {
-    setFile(uploadedFile);
-    setStatus('processing');
-    setProgress(0);
-    setErrorMsg("");
+  const handleFilesAccepted = async (uploadedFiles: File[]) => {
+    // Initialize state for new files
+    const newFileStates: ProcessedFile[] = uploadedFiles.map(file => ({
+      id: Math.random().toString(36).substr(2, 9),
+      originalName: file.name,
+      status: 'processing',
+      progress: 0,
+      csvContent: null,
+      outputFilename: '',
+      recordCount: 0,
+      fileTypeDisplay: '',
+    }));
 
-    // Simulate progress for better UX
+    setFiles(prev => [...prev, ...newFileStates]);
+
+    // Process each file
+    // We match by index since we just added them to the end, but using ID is safer if we passed it along
+    // Here we iterate the original files and update state by matching originalName + index or just creating a closure
+    
+    // To keep it simple and safe with React state updates, let's process them one by one but async
+    uploadedFiles.forEach(async (file, index) => {
+      const fileId = newFileStates[index].id;
+      await processSingleFile(file, fileId);
+    });
+  };
+
+  const processSingleFile = async (file: File, fileId: string) => {
+    // Helper to update specific file state
+    const updateFile = (updates: Partial<ProcessedFile>) => {
+      setFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...updates } : f));
+    };
+
+    // Simulate progress
     const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev;
-        return prev + 10;
-      });
+      setFiles(prev => prev.map(f => {
+        if (f.id === fileId && f.status === 'processing' && f.progress < 90) {
+          return { ...f, progress: f.progress + 10 };
+        }
+        return f;
+      }));
     }, 100);
 
     try {
-      // 1. Parse Excel
-      const jsonData = await parseExcel(uploadedFile);
+      const jsonData = await parseExcel(file);
       
-      // 2. Convert to CSV Logic
       if (jsonData.length === 0) {
         throw new Error("Excel 檔案內容為空");
       }
 
-      const { csvContent: csv, filePrefix, count } = convertToCsvData(jsonData);
+      const { csvContent, filePrefix, count } = convertToCsvData(jsonData);
       
       clearInterval(interval);
-      setProgress(100);
-      setCsvContent(csv);
-      setRecordCount(count);
-      setFileTypeDisplay(filePrefix.includes("RTN") ? "退貨訂單 (RTN)" : "一般出貨訂單 (SHPECOM)");
       
-      const filename = `${filePrefix}_${generateFilenameTimestamp()}.csv`;
-      setGeneratedFilename(filename);
-      
-      // Small delay to show 100% before switching to success
-      setTimeout(() => setStatus('success'), 500);
+      // Generate unique filename part (append random string to avoid collision in batch)
+      const timestamp = generateFilenameTimestamp();
+      const uniqueSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      const filename = `${filePrefix}_${timestamp}_${uniqueSuffix}.csv`;
+
+      updateFile({
+        status: 'success',
+        progress: 100,
+        csvContent: csvContent,
+        outputFilename: filename,
+        recordCount: count,
+        fileTypeDisplay: filePrefix.includes("RTN") ? "退貨 (RTN)" : "出貨 (SHPECOM)"
+      });
 
     } catch (error: any) {
       clearInterval(interval);
       console.error(error);
-      setStatus('error');
-      setErrorMsg(error.message || "轉檔失敗，請確認 Excel 格式是否正確");
+      updateFile({
+        status: 'error',
+        progress: 100,
+        errorMsg: error.message || "轉檔失敗",
+        recordCount: 0
+      });
     }
   };
 
-  const downloadFile = () => {
-    if (!csvContent) return;
+  const downloadAll = async () => {
+    if (successFiles.length === 0) return;
+
+    // If only one file, download directly
+    if (successFiles.length === 1) {
+      const f = successFiles[0];
+      downloadSingle(f.outputFilename, f.csvContent!);
+      return;
+    }
+
+    // Multiple files: Zip them
+    const zip = new JSZip();
     
-    // Add BOM for Excel UTF-8 compatibility
-    const bom = "\uFEFF";
-    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+    successFiles.forEach(f => {
+      if (f.csvContent) {
+        // Add BOM for Excel UTF-8
+        zip.file(f.outputFilename, "\uFEFF" + f.csvContent);
+      }
+    });
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const timestamp = generateFilenameTimestamp();
+    const zipName = `MUFE_MOMO_Converted_${timestamp}.zip`;
+    
     const url = URL.createObjectURL(blob);
-    
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', generatedFilename);
+    link.setAttribute('download', zipName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadSingle = (filename: string, content: string) => {
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const reset = () => {
-    setFile(null);
-    setStatus('idle');
-    setProgress(0);
-    setCsvContent(null);
-    setGeneratedFilename("");
+    setFiles([]);
   };
 
   return (
@@ -100,33 +171,46 @@ const App: React.FC = () => {
             </h1>
           </div>
           <div className="hidden sm:flex flex-col items-end justify-center text-xs text-gray-400 font-mono leading-tight">
-            <span>v1.1.3</span>
-            <span className="text-[10px] opacity-75">Made by IS Nick</span>
+            <span>v1.2.0</span>
+            <span className="text-[10px] opacity-75">Batch Support</span>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow max-w-3xl w-full mx-auto px-4 py-12">
+      <main className="flex-grow max-w-4xl w-full mx-auto px-4 py-12">
         
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden min-h-[400px] flex flex-col">
           
           {/* Status Bar / Header of Card */}
-          <div className="px-8 py-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-              <FileOutput size={24} className="text-gray-600" />
-              Excel 轉 CSV 
-            </h2>
-            <p className="text-gray-500 text-sm mt-1 ml-8">
-              支援「出貨訂單」與「退貨訂單」自動判斷
-            </p>
+          <div className="px-8 py-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                <FileOutput size={24} className="text-gray-600" />
+                Excel 轉 CSV
+              </h2>
+              <p className="text-gray-500 text-sm mt-1 ml-8">
+                {hasFiles 
+                  ? `已處理 ${files.filter(f => f.status !== 'processing').length} / ${files.length} 個檔案`
+                  : "支援多個檔案批次上傳與轉檔"}
+              </p>
+            </div>
+            {hasFiles && (
+               <button
+               onClick={reset}
+               className="text-sm text-gray-500 hover:text-gray-800 underline underline-offset-2"
+             >
+               清除列表
+             </button>
+            )}
           </div>
 
-          <div className="p-8">
-            {/* 1. Upload State */}
-            {status === 'idle' && (
-              <div className="space-y-4">
-                <Dropzone onFileAccepted={handleFileProcess} isLoading={false} />
+          <div className="p-8 flex-grow flex flex-col">
+            
+            {/* 1. Upload State (Show when empty) */}
+            {!hasFiles && (
+              <div className="flex-grow flex flex-col justify-center space-y-4">
+                <Dropzone onFilesAccepted={handleFilesAccepted} isLoading={false} />
                 <div className="text-center">
                   <p className="text-xs text-gray-400">
                     請上傳標準 MOMO 後台匯出的 .xlsx 檔案
@@ -135,96 +219,98 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* 2. Processing State */}
-            {status === 'processing' && (
-              <div className="py-12 flex flex-col items-center justify-center">
-                <div className="w-full max-w-md space-y-4">
-                  <div className="flex justify-between text-sm font-medium text-gray-600">
-                    <span>處理中...</span>
-                    <span>{progress}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                    <div 
-                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" 
-                      style={{ width: `${progress}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-center text-xs text-gray-400 pt-2">
-                    正在分析訂單類別與轉換資料...
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* 3. Success State */}
-            {status === 'success' && (
-              <div className="flex flex-col items-center animate-fade-in">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6">
-                  <CheckCircle className="w-8 h-8 text-green-600" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">轉檔成功！</h3>
-                
-                <div className="flex flex-col items-center mb-6">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-2">
-                        {fileTypeDisplay}
-                    </span>
-                    <p className="text-gray-500 text-center max-w-md">
-                    已成功轉換 {recordCount} 筆資料。
-                    </p>
-                </div>
-
-                <div className="w-full bg-gray-50 rounded-lg border border-gray-200 p-4 mb-8">
-                  <div className="flex items-center gap-3">
-                    <FileText className="text-gray-400" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {generatedFilename}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        CSV 文件 • {(new Blob([csvContent || ""]).size / 1024).toFixed(2)} KB
-                      </p>
+            {/* 2. File List (Show when has files) */}
+            {hasFiles && (
+              <div className="space-y-4">
+                 {/* Mini Dropzone for adding more */}
+                 {!isProcessing && (
+                    <div className="mb-6">
+                         <Dropzone onFilesAccepted={handleFilesAccepted} isLoading={isProcessing} />
                     </div>
-                  </div>
-                </div>
+                 )}
 
-                <div className="flex gap-4 w-full sm:w-auto">
-                  <button
-                    onClick={reset}
-                    className="flex-1 sm:flex-none px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <RefreshCw size={18} />
-                    重新上傳
-                  </button>
-                  <button
-                    onClick={downloadFile}
-                    className="flex-1 sm:flex-none px-8 py-3 rounded-xl bg-black text-white font-medium hover:bg-gray-800 transition-colors shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                  >
-                    <Download size={18} />
-                    下載檔案
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 4. Error State */}
-            {status === 'error' && (
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-6">
-                  <AlertCircle className="w-8 h-8 text-red-600" />
-                </div>
-                <h3 className="text-xl font-bold text-gray-800 mb-2">發生錯誤</h3>
-                <p className="text-red-500 mb-8 text-center max-w-md bg-red-50 p-3 rounded-md border border-red-100">
-                  {errorMsg}
-                </p>
-                <button
-                  onClick={reset}
-                  className="px-6 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
-                >
-                  重試
-                </button>
+                 <div className="flex flex-col gap-3">
+                    {files.map((file) => (
+                        <div key={file.id} className="bg-gray-50 border border-gray-100 rounded-lg p-4 flex items-center justify-between transition-all hover:shadow-sm hover:border-gray-200">
+                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                                {/* Icon based on status */}
+                                {file.status === 'processing' && <Loader2 className="animate-spin text-blue-500" size={20} />}
+                                {file.status === 'success' && <CheckCircle className="text-green-500" size={20} />}
+                                {file.status === 'error' && <XCircle className="text-red-500" size={20} />}
+                                
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-700 truncate" title={file.originalName}>
+                                        {file.originalName}
+                                    </p>
+                                    <div className="flex items-center gap-2 text-xs mt-0.5">
+                                        {file.status === 'processing' && (
+                                            <div className="w-24 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                                <div className="bg-blue-500 h-full transition-all duration-300" style={{width: `${file.progress}%`}} />
+                                            </div>
+                                        )}
+                                        {file.status === 'success' && (
+                                            <>
+                                                <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                                    {file.fileTypeDisplay}
+                                                </span>
+                                                <span className="text-gray-500">
+                                                    {file.recordCount} 筆資料
+                                                </span>
+                                            </>
+                                        )}
+                                        {file.status === 'error' && (
+                                            <span className="text-red-500">
+                                                {file.errorMsg}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Individual Action */}
+                            {file.status === 'success' && (
+                                <button 
+                                    onClick={() => downloadSingle(file.outputFilename, file.csvContent!)}
+                                    className="ml-4 p-2 text-gray-400 hover:text-black hover:bg-gray-200 rounded-full transition-colors"
+                                    title="下載此檔案"
+                                >
+                                    <Download size={16} />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                 </div>
               </div>
             )}
           </div>
+
+          {/* Footer Actions */}
+          {hasFiles && (
+             <div className="bg-gray-50 px-8 py-5 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0">
+                 <button
+                    onClick={reset}
+                    className="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-600 font-medium hover:bg-white hover:border-gray-400 transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <RefreshCw size={16} />
+                    全部清除
+                  </button>
+                  
+                  <button
+                    onClick={downloadAll}
+                    disabled={!hasSuccess || isProcessing}
+                    className={`px-6 py-2.5 rounded-xl font-medium shadow-lg transition-all flex items-center gap-2 text-sm
+                        ${(!hasSuccess || isProcessing) 
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none' 
+                            : 'bg-black text-white hover:bg-gray-800 hover:shadow-xl'
+                        }
+                    `}
+                  >
+                    {successFiles.length > 1 ? <FileArchive size={16} /> : <Download size={16} />}
+                    {successFiles.length > 1 ? `打包下載所有 (${successFiles.length})` : '下載檔案'}
+                  </button>
+             </div>
+          )}
+
         </div>
       </main>
     </div>

@@ -1,12 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { UploadCloud, FileSpreadsheet } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, Files } from 'lucide-react';
 
 interface DropzoneProps {
-  onFileAccepted: (file: File) => void;
+  onFilesAccepted: (files: File[]) => void;
   isLoading: boolean;
 }
 
-const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted, isLoading }) => {
+const Dropzone: React.FC<DropzoneProps> = ({ onFilesAccepted, isLoading }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -22,27 +22,47 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted, isLoading }) => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    
+    if (isLoading) return;
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      validateAndPass(e.dataTransfer.files[0]);
+      const validFiles: File[] = [];
+      Array.from(e.dataTransfer.files).forEach((item) => {
+        const file = item as File;
+        if (isValidFile(file)) {
+            validFiles.push(file);
+        }
+      });
+      
+      if (validFiles.length > 0) {
+        onFilesAccepted(validFiles);
+      } else {
+        alert("請上傳 .xlsx 格式的 Excel 檔案");
+      }
     }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      validateAndPass(e.target.files[0]);
+      const validFiles: File[] = [];
+      Array.from(e.target.files).forEach((item) => {
+        const file = item as File;
+        if (isValidFile(file)) {
+            validFiles.push(file);
+        }
+      });
+
+      if (validFiles.length > 0) {
+        onFilesAccepted(validFiles);
+      }
     }
   };
 
-  const validateAndPass = (file: File) => {
-    if (isLoading) return;
-    if (
+  const isValidFile = (file: File) => {
+    return (
       file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
       file.name.endsWith(".xlsx")
-    ) {
-      onFileAccepted(file);
-    } else {
-      alert("請上傳 .xlsx 格式的 Excel 檔案");
-    }
+    );
   };
 
   return (
@@ -61,17 +81,19 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFileAccepted, isLoading }) => {
         ref={inputRef}
         className="hidden"
         accept=".xlsx"
+        multiple // Enable multiple file selection
         onChange={handleInputChange}
         disabled={isLoading}
       />
       
       <div className="flex flex-col items-center text-center p-6">
         <div className={`p-4 rounded-full mb-4 ${isDragOver ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-           {isDragOver ? <FileSpreadsheet size={32} /> : <UploadCloud size={32} />}
+           {isDragOver ? <Files size={32} /> : <UploadCloud size={32} />}
         </div>
         <h3 className="text-lg font-semibold text-gray-700 mb-1">
-          {isLoading ? "處理中..." : "點擊或拖曳檔案至此"}
+          {isLoading ? "處理中..." : "點擊或拖曳多個檔案至此"}
         </h3>
+        <p className="text-sm text-gray-400 mt-2">支援批次上傳與轉檔</p>
       </div>
     </div>
   );
