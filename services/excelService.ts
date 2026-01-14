@@ -46,17 +46,32 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
   ];
 
   // Detect Type based on the first row
-  // Check if "訂單類別" exists and contains "退貨"
+  // Check if "訂單類別" exists and contains "退貨" or "換貨回收"
   let isReturn = false;
-  if (rows.length > 0 && rows[0]["訂單類別"] && String(rows[0]["訂單類別"]).includes("退貨")) {
-    isReturn = true;
+  if (rows.length > 0 && rows[0]["訂單類別"]) {
+    const orderType = String(rows[0]["訂單類別"]);
+    if (orderType.includes("退貨") || orderType.includes("換貨回收")) {
+      isReturn = true;
+    }
   }
 
   // Determine Prefix based on type
   const filePrefix = isReturn ? "MUFE_MOMO_ZOHO_RTN02" : "MUFE_MOMO_ZOHO_SHPECOM";
 
+  // Filter rows before processing
+  const validRows = rows.filter(row => {
+    // 規則 1: 出貨部分 (非退貨)，當匯入 excel 的「配送單號」欄位為「未出即退」，則忽略該筆資料
+    if (!isReturn) {
+      const deliveryStatus = row["配送單號"];
+      if (deliveryStatus && String(deliveryStatus).trim() === "未出即退") {
+        return false;
+      }
+    }
+    return true;
+  });
+
   // Map rows
-  const csvRows = rows.map((row) => {
+  const csvRows = validRows.map((row) => {
     // Ensure orderId is a string for manipulation
     const orderId = row["訂單編號"] ? String(row["訂單編號"]).trim() : "";
     const sku = row["商品原廠編號"] || "";
@@ -216,6 +231,6 @@ export const convertToCsvData = (rows: any[]): ConvertResult => {
   return {
     csvContent: [headers.join(","), ...csvRows].join("\n"),
     filePrefix,
-    count: rows.length
+    count: validRows.length
   };
 };
