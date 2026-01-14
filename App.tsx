@@ -172,7 +172,7 @@ const App: React.FC = () => {
           </div>
           <div className="hidden sm:flex flex-col items-end justify-center font-mono leading-tight">
             <span className="text-xs text-gray-400">v1.2.0</span>
-            <span className="text-sm font-semibold text-gray-600">Made by IS PM Nick</span>
+            <span className="text-xs font-semibold text-gray-600">Made by IS PM Nick</span>
           </div>
         </div>
       </header>
