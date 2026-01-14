@@ -92,7 +92,7 @@ const App: React.FC = () => {
             <img 
               src="/mufe-logo.png" 
               alt="MAKE UP FOR EVER" 
-              className="h-10 w-auto object-contain"
+              className="h-12 w-auto object-contain"
             />
             <div className="h-6 w-px bg-gray-300 mx-1"></div>
             <h1 className="text-xl font-bold text-gray-800 tracking-tight">
